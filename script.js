@@ -2,7 +2,70 @@
 const CONTENT_STORAGE_KEY = 'nvds_content';
 // Default image used when no image has been set via Admin yet
 // (e.g., first load on GitHub Pages fresh origin).
-const DEFAULT_FALLBACK_IMAGE = 'assets/hero-terraces.svg';
+const DEFAULT_FALLBACK_IMAGE = 'assets/placeholders/placeholder-landscape.jpg';
+
+const ORIENTATION_FALLBACKS = Object.freeze({
+  portrait: 'assets/placeholders/placeholder-portrait.jpg',
+  tall: 'assets/placeholders/placeholder-portrait.jpg',
+  square: 'assets/placeholders/placeholder-square.jpg',
+  landscape: DEFAULT_FALLBACK_IMAGE,
+  wide: 'assets/placeholders/placeholder-wide.jpg',
+});
+
+const SLOT_ORIENTATION_OVERRIDES = Object.freeze({
+  'about-cta-backdrop': 'wide',
+  'about-hero-banner': 'wide',
+  'about-impact-primary': 'portrait',
+  'about-impact-secondary': 'square',
+  'about-impact-tertiary': 'square',
+  'about-pillar-one': 'landscape',
+  'about-pillar-two': 'landscape',
+  'blog-card-1': 'landscape',
+  'blog-card-2': 'landscape',
+  'blog-card-3': 'landscape',
+  'blog-education-hero': 'portrait',
+  'blog-hero-feature': 'portrait',
+  'blog-malnutrition-hero': 'portrait',
+  'blog-newsletter-image': 'portrait',
+  'blog-renewable-hero': 'portrait',
+  'cause-education-hero': 'portrait',
+  'cause-empowerment': 'landscape',
+  'cause-health': 'landscape',
+  'cause-healthcare-hero': 'portrait',
+  'cause-livelihoods-hero': 'portrait',
+  'cause-women': 'landscape',
+  'causes-cta-backdrop': 'wide',
+  'causes-focus-one': 'landscape',
+  'causes-focus-three': 'landscape',
+  'causes-focus-two': 'landscape',
+  'causes-hero-primary': 'portrait',
+  'causes-hero-secondary': 'square',
+  'causes-programmes-primary': 'portrait',
+  'contact-hero-image': 'portrait',
+  'contact-support-image': 'landscape',
+  'donate-hero-image': 'portrait',
+  'donate-image': 'portrait',
+  'donate-impact-image': 'portrait',
+  'focus-education': 'landscape',
+  'focus-health': 'landscape',
+  'focus-livelihoods': 'landscape',
+  'gallery-1': 'landscape',
+  'gallery-2': 'landscape',
+  'gallery-3': 'landscape',
+  'gallery-4': 'landscape',
+  'gallery-5': 'landscape',
+  'gallery-6': 'landscape',
+  'hero-primary': 'portrait',
+  'hero-secondary': 'square',
+  'mission-image': 'portrait',
+  'story-education': 'landscape',
+  'story-energy': 'landscape',
+  'story-health': 'landscape',
+  'volunteer-image': 'landscape',
+  'volunteer-page-hero': 'portrait',
+  'volunteer-stories-image': 'landscape',
+  'why-hero': 'wide',
+});
 
 const DEFAULT_CONTENT = {
   'nav.logoText': 'NVDS',
@@ -351,13 +414,56 @@ const DEFAULT_CONTENT = {
   'donatePage.form.buttonLabel': 'Submit pledge',
 };
 
+function orientationFallbackForSlot(slotId) {
+  if (!slotId) return null;
+  const key = SLOT_ORIENTATION_OVERRIDES[slotId];
+  return key ? ORIENTATION_FALLBACKS[key] || null : null;
+}
+
+function inferOrientationFallback(element) {
+  const classList = element?.classList;
+  if (!classList) return null;
+  if (classList.contains('image-frame--portrait') || classList.contains('image-frame--tall')) {
+    return ORIENTATION_FALLBACKS.portrait;
+  }
+  if (classList.contains('image-frame--square')) {
+    return ORIENTATION_FALLBACKS.square;
+  }
+  if (
+    classList.contains('image-frame--wide') ||
+    classList.contains('image-frame--banner') ||
+    classList.contains('image-frame--panorama')
+  ) {
+    return ORIENTATION_FALLBACKS.wide;
+  }
+  if (classList.contains('image-frame--landscape')) {
+    return ORIENTATION_FALLBACKS.landscape;
+  }
+  if (classList.contains('slider__card') || classList.contains('blog-card__image') || classList.contains('card__image')) {
+    return ORIENTATION_FALLBACKS.landscape;
+  }
+  return null;
+}
+
+function resolveFallbackImage(element, slotId, nestedDefault) {
+  if (nestedDefault) return nestedDefault;
+  const elementDefault = element?.dataset?.defaultSrc;
+  if (elementDefault) return elementDefault;
+  const slotFallback = orientationFallbackForSlot(slotId);
+  if (slotFallback) return slotFallback;
+  const classFallback = inferOrientationFallback(element);
+  if (classFallback) return classFallback;
+  return DEFAULT_FALLBACK_IMAGE;
+}
+
 function applyImageToElement(element, dataUrl) {
   if (!element) return;
 
+  const slotId = element.dataset ? element.dataset.imageSlot : undefined;
   const isImgElement = element.tagName === 'IMG';
   const nestedImage = isImgElement ? element : element.querySelector('[data-slot-image]');
-  const defaultSrc = nestedImage?.dataset.defaultSrc;
   const hasBackgroundTarget = !nestedImage || isImgElement;
+  const fallbackSrc = resolveFallbackImage(element, slotId, nestedImage?.dataset?.defaultSrc);
 
   if (dataUrl) {
     if (nestedImage) {
@@ -374,20 +480,31 @@ function applyImageToElement(element, dataUrl) {
   }
 
   if (nestedImage) {
-    if (defaultSrc) {
-      nestedImage.src = defaultSrc;
+    if (fallbackSrc) {
+      nestedImage.src = fallbackSrc;
       nestedImage.hidden = false;
       element.classList.remove('is-empty');
+      if (hasBackgroundTarget && !isImgElement) {
+        element.style.backgroundImage = `url("${fallbackSrc}")`;
+      } else {
+        element.style.removeProperty('background-image');
+      }
     } else {
       nestedImage.removeAttribute('src');
       nestedImage.hidden = true;
       element.classList.add('is-empty');
+      element.style.removeProperty('background-image');
     }
-  } else {
-    element.classList.add('is-empty');
+    return;
   }
 
-  element.style.removeProperty('background-image');
+  if (fallbackSrc) {
+    element.classList.remove('is-empty');
+    element.style.backgroundImage = `url("${fallbackSrc}")`;
+  } else {
+    element.classList.add('is-empty');
+    element.style.removeProperty('background-image');
+  }
 }
 
 function loadStoredImages() {
@@ -425,18 +542,10 @@ function loadStoredImages() {
           }
           // Nothing stored for this slot: apply a safe default so
           // visitors don't see the grey placeholder overlay.
-          if ((slot.dataset.imageSlot || '') === 'nav-logo') {
-            applyImageToElement(slot, null);
-          } else {
-            applyImageToElement(slot, DEFAULT_FALLBACK_IMAGE);
-          }
+          applyImageToElement(slot, null);
         })
         .catch(() => {
-          if ((slot.dataset.imageSlot || '') === 'nav-logo') {
-            applyImageToElement(slot, null);
-          } else {
-            applyImageToElement(slot, DEFAULT_FALLBACK_IMAGE);
-          }
+          applyImageToElement(slot, null);
         });
     } else {
       applyImageToElement(slot, stored);
@@ -976,11 +1085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         idbGetImage(slotId)
           .then((data) => applyImageToElement(element, data || null))
           .catch(() => {
-            if ((slotId || '') === 'nav-logo') {
-              applyImageToElement(element, null);
-            } else {
-              applyImageToElement(element, DEFAULT_FALLBACK_IMAGE);
-            }
+            applyImageToElement(element, null);
           });
       } else {
         applyImageToElement(element, event.newValue);
