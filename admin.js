@@ -1,6 +1,24 @@
-const IMAGE_STORAGE_PREFIX = 'nvds_images_';
-const CONTENT_STORAGE_KEY = 'nvds_content';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const API_BASE = (() => {
+  if (typeof window !== 'undefined' && window.NVDS_API_BASE) {
+    return window.NVDS_API_BASE.replace(/\/$/, '');
+  }
+  try {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : 'http://localhost:4000';
+    return `${origin.replace(/\/$/, '')}/api`;
+  } catch (error) {
+    console.warn('Falling back to localhost API base.', error);
+    return 'http://localhost:4000/api';
+  }
+})();
+const IMAGE_ROOT = (() => {
+  if (typeof window !== 'undefined' && window.NVDS_IMAGE_ROOT) {
+    return window.NVDS_IMAGE_ROOT.replace(/\/$/, '');
+  }
+  return '';
+})();
 
 const DEFAULT_CONTENT = {
   'nav.logoText': 'NVDS',
@@ -991,7 +1009,7 @@ const PAGE_GROUPS = [
     intro: 'Select any page from the navigation to begin editing its content.',
     note: {
       title: 'Before you start',
-      body: 'Edits are stored in this browser only. Keep image uploads under 1.5 MB and refresh the public site after saving to view your changes.',
+      body: 'Edits are saved to the NVDS admin backend. Keep image uploads under 1.5 MB and refresh the public site after publishing.',
     },
     sections: [],
   },
@@ -1374,6 +1392,77 @@ const fieldElements = new Map();
 const sectionStatus = new Map();
 const dirtySections = new Set();
 let activePage = 'dashboard';
+let backendOnline = true;
+const imageManifest = new Map();
+
+async function initializeContentFromBackend() {
+  try {
+    const [contentPayload, imagePayload] = await Promise.all([
+      fetchBackendContent(),
+      fetchImageManifest(),
+    ]);
+    contentState = { ...DEFAULT_CONTENT, ...contentPayload };
+    Object.entries(imagePayload || {}).forEach(([slotId, url]) => {
+      if (typeof url === 'string') {
+        setStoredImageUrl(slotId, url);
+      }
+    });
+    backendOnline = true;
+  } catch (error) {
+    backendOnline = false;
+    contentState = { ...DEFAULT_CONTENT };
+    console.error('Unable to reach NVDS backend. Admin will operate in read-only mode.', error);
+    window.alert('Could not connect to the NVDS backend API. Edits will not be saved until the server is reachable.');
+  }
+}
+
+async function fetchBackendContent() {
+  const res = await fetch(`${API_BASE}/content`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Content request failed: ${res.status}`);
+  const payload = await res.json();
+  return payload && typeof payload.content === 'object' ? payload.content : {};
+}
+
+async function saveBackendContent() {
+  const res = await fetch(`${API_BASE}/content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: contentState }),
+  });
+  if (!res.ok) throw new Error(`Save failed with status ${res.status}`);
+  backendOnline = true;
+  return res.json();
+}
+
+async function fetchImageManifest() {
+  const res = await fetch(`${API_BASE}/images`, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Image manifest request failed: ${res.status}`);
+  const payload = await res.json();
+  if (!payload || typeof payload.images !== 'object') return {};
+  return payload.images;
+}
+
+function getStoredImageUrl(slotId) {
+  return imageManifest.get(slotId) || null;
+}
+
+function setStoredImageUrl(slotId, url) {
+  if (url) {
+    imageManifest.set(slotId, resolveImageUrl(url));
+  } else {
+    imageManifest.delete(slotId);
+  }
+}
+
+function resolveImageUrl(value) {
+  if (!value) return null;
+  if (value.startsWith('data:') || /^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (!IMAGE_ROOT) return value;
+  const separator = value.startsWith('/') ? '' : '/';
+  return `${IMAGE_ROOT}${separator}${value}`;
+}
 
 async function importFromReadme() {
   try {
@@ -1405,18 +1494,9 @@ async function importFromReadme() {
       return;
     }
 
-    contentState = { ...contentState, ...payload };
-    const diff = (function computeDiff(obj, defaults){
-      const out = {};
-      Object.keys(obj).forEach((k)=>{ if (defaults[k] !== obj[k]) out[k] = obj[k]; });
-      return out;
-    })(contentState, DEFAULT_CONTENT);
-
-    if (Object.keys(diff).length === 0) {
-      localStorage.removeItem(CONTENT_STORAGE_KEY);
-    } else {
-      localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(diff));
-    }
+    contentState = { ...DEFAULT_CONTENT, ...payload };
+    await saveBackendContent();
+    backendOnline = true;
 
     syncContentFields();
     CONTENT_SECTIONS.forEach((s)=> markSectionSaved(s.id));
@@ -1437,61 +1517,22 @@ function debounce(fn, delay) {
   };
 }
 
-function isStorageAvailable() {
-  try {
-    const testKey = '__nvds_test__';
-    localStorage.setItem(testKey, '1');
-    localStorage.removeItem(testKey);
-    return true;
-  } catch (error) {
-    console.error('Local storage unavailable:', error);
-    return false;
-  }
+async function persistContentImmediate() {
+  await saveBackendContent();
 }
 
-function readStoredContent() {
-  try {
-    const raw = localStorage.getItem(CONTENT_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null ? parsed : {};
-  } catch (error) {
-    console.warn('Unable to parse stored content, using defaults.', error);
-    return {};
-  }
-}
-
-function buildDiff(state) {
-  const diff = {};
-  Object.keys(state).forEach((key) => {
-    const value = state[key];
-    if (!Object.prototype.hasOwnProperty.call(DEFAULT_CONTENT, key) || DEFAULT_CONTENT[key] !== value) {
-      diff[key] = value;
-    }
-  });
-  return diff;
-}
-
-function persistContentImmediate() {
-  const diff = buildDiff(contentState);
-  if (Object.keys(diff).length === 0) {
-    localStorage.removeItem(CONTENT_STORAGE_KEY);
-  } else {
-    localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(diff));
-  }
-}
-
-const schedulePersist = debounce(() => {
+const schedulePersist = debounce(async () => {
   const pending = Array.from(dirtySections);
   if (pending.length === 0) return;
   try {
-    persistContentImmediate();
+    await persistContentImmediate();
     pending.forEach(markSectionSaved);
     dirtySections.clear();
     refreshActivePageBadge();
     updatePendingChangesMetric();
   } catch (error) {
     console.error('Unable to save content.', error);
+    backendOnline = false;
     pending.forEach(markSectionError);
     refreshActivePageBadge();
     updatePendingChangesMetric();
@@ -1631,14 +1672,8 @@ function renderContentControls(sections) {
         dimensions.textContent = slot.sizeHint;
         preview.dataset.slotId = slot.id;
 
-        const stored = localStorage.getItem(`${IMAGE_STORAGE_PREFIX}${slot.id}`);
-        if (stored === '__IDB__' || stored === null) {
-          idbGetImage(slot.id)
-            .then((data) => updatePreview(preview, data || null))
-            .catch(() => updatePreview(preview, null));
-        } else {
-          updatePreview(preview, stored);
-        }
+        const stored = getStoredImageUrl(slot.id);
+        updatePreview(preview, stored || null);
 
         fileInput.addEventListener('change', (event) => {
           handleFileUpload(event.target.files[0], slot.id, preview, fileInput);
@@ -1836,6 +1871,21 @@ function updatePreview(preview, dataUrl) {
   }
 }
 
+async function uploadOptimizedImage(slotId, dataUrl, originalName) {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const extensionMatch = (originalName || '').match(/\.([a-zA-Z0-9]+)$/);
+  const ext = extensionMatch ? extensionMatch[1].toLowerCase() : 'webp';
+  const formData = new FormData();
+  formData.append('file', blob, `${slotId}.${ext}`);
+  const res = await fetch(`${API_BASE}/images/${slotId}`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`Upload failed with status ${res.status}`);
+  return res.json();
+}
+
 async function handleFileUpload(file, slotId, preview, input) {
   if (!file) return;
   if (file.size > MAX_FILE_SIZE) {
@@ -1845,68 +1895,36 @@ async function handleFileUpload(file, slotId, preview, input) {
   }
 
   try {
-    // Optimize image (resize + compress) to reduce storage footprint
     const dataUrl = await optimizeImageFile(file, slotId);
-    const key = `${IMAGE_STORAGE_PREFIX}${slotId}`;
-    try {
-      localStorage.setItem(key, dataUrl);
-      updatePreview(preview, dataUrl);
-    } catch (error) {
-      const isQuota = error && (error.name === 'QuotaExceededError' || error.code === 22 || error.code === 1014);
-      if (isQuota) {
-        try {
-          await idbSetImage(slotId, dataUrl);
-          // Store a tiny marker so other tabs know to read from IndexedDB
-          localStorage.setItem(key, '__IDB__');
-          updatePreview(preview, dataUrl);
-        } catch (idbErr) {
-          console.error('Unable to store image in IndexedDB.', idbErr);
-          window.alert('Storage is full and fallback failed. Please remove older images or use a smaller file.');
-        }
-      } else {
-        console.error('Unable to store image.', error);
-        window.alert('Could not store the image. Try clearing older images first.');
-      }
+    updatePreview(preview, dataUrl);
+    const payload = await uploadOptimizedImage(slotId, dataUrl, file.name);
+    const remoteUrl = payload?.url || null;
+    if (remoteUrl) {
+      setStoredImageUrl(slotId, remoteUrl);
+      updatePreview(preview, remoteUrl);
     }
   } catch (readErr) {
     console.error('Failed processing the selected image.', readErr);
-    window.alert('Could not read the selected image file.');
+    window.alert('Could not store the selected image file on the server.');
   } finally {
     input.value = '';
   }
 }
 
 async function clearSlot(slotId, preview) {
-  try { await idbDeleteImage(slotId); } catch {}
-  localStorage.removeItem(`${IMAGE_STORAGE_PREFIX}${slotId}`);
-  updatePreview(preview, null);
+  try {
+    const res = await fetch(`${API_BASE}/images/${slotId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Delete failed with status ${res.status}`);
+    setStoredImageUrl(slotId, null);
+    updatePreview(preview, null);
+  } catch (error) {
+    console.error('Unable to remove stored image.', error);
+    window.alert('Could not remove the stored image from the backend.');
+  }
 }
 
-function handleStorageContentChange(rawValue) {
-  let incoming = {};
-  if (rawValue) {
-    try {
-      const parsed = JSON.parse(rawValue);
-      if (typeof parsed === 'object' && parsed !== null) {
-        incoming = parsed;
-      }
-    } catch (error) {
-      console.warn('Unable to parse incoming content payload.', error);
-    }
-  }
-  contentState = { ...DEFAULT_CONTENT, ...incoming };
-  syncContentFields();
-  CONTENT_SECTIONS.forEach((section) => markSectionSaved(section.id));
-  refreshActivePageBadge();
-  updatePendingChangesMetric();
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  if (!isStorageAvailable()) {
-    window.alert('Local storage is disabled in this browser. Content edits cannot be saved.');
-    return;
-  }
-
+document.addEventListener('DOMContentLoaded', async () => {
+  await initializeContentFromBackend();
   const reloadButton = document.getElementById('reload-preview');
   if (reloadButton) {
     reloadButton.addEventListener('click', () => {
@@ -1920,8 +1938,6 @@ document.addEventListener('DOMContentLoaded', () => {
       importFromReadme();
     });
   }
-
-  contentState = { ...DEFAULT_CONTENT, ...readStoredContent() };
 
   // If a hash is present and matches a known page, activate it first
   const fromHash = getPageIdFromHash();
@@ -1938,80 +1954,7 @@ document.addEventListener('DOMContentLoaded', () => {
       activatePage(pid);
     }
   });
-
-  window.addEventListener('storage', (event) => {
-    if (!event.key) return;
-    if (event.key === CONTENT_STORAGE_KEY) {
-      handleStorageContentChange(event.newValue);
-      return;
-    }
-    if (event.key.startsWith(IMAGE_STORAGE_PREFIX)) {
-      const slotId = event.key.replace(IMAGE_STORAGE_PREFIX, '');
-      const cardPreview = document.querySelector(`.slot-card__preview[data-slot-id="${slotId}"]`);
-      if (!cardPreview) return;
-      if (event.newValue === '__IDB__' || event.newValue === null) {
-        idbGetImage(slotId)
-          .then((data) => updatePreview(cardPreview, data || null))
-          .catch(() => updatePreview(cardPreview, null));
-      } else {
-        updatePreview(cardPreview, event.newValue);
-      }
-    }
-  });
 });
-
-// ---- IndexedDB fallback + image optimization helpers ----
-let __nvds_imageDbPromise;
-function openImageDb() {
-  if (__nvds_imageDbPromise) return __nvds_imageDbPromise;
-  __nvds_imageDbPromise = new Promise((resolve, reject) => {
-    try {
-      const request = indexedDB.open('nvds-admin', 1);
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains('images')) {
-          db.createObjectStore('images');
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    } catch (err) {
-      reject(err);
-    }
-  });
-  return __nvds_imageDbPromise;
-}
-
-async function idbSetImage(slotId, dataUrl) {
-  const db = await openImageDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('images', 'readwrite');
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.objectStore('images').put(dataUrl, slotId);
-  });
-}
-
-async function idbGetImage(slotId) {
-  const db = await openImageDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('images', 'readonly');
-    tx.onerror = () => reject(tx.error);
-    const req = tx.objectStore('images').get(slotId);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbDeleteImage(slotId) {
-  const db = await openImageDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('images', 'readwrite');
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.objectStore('images').delete(slotId);
-  });
-}
 
 function getTargetLongEdge(slotId) {
   try {
