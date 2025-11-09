@@ -1,3 +1,65 @@
+// Shared runtime configuration so public pages can reuse the same backend
+// target that was selected in the admin panel (stored in localStorage).
+(function bootstrapNvdsRuntimeConfig() {
+  if (typeof window === 'undefined') return;
+  const STORAGE_KEY = 'nvds_admin_config';
+  let stored = {};
+
+  try {
+    const raw = window.localStorage ? window.localStorage.getItem(STORAGE_KEY) : null;
+    stored = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    stored = {};
+  }
+
+  let params;
+  try {
+    params = new URLSearchParams(window.location.search || '');
+  } catch (_) {
+    params = new URLSearchParams();
+  }
+
+  if (params.get('resetConfig') === '1') {
+    try {
+      window.localStorage && window.localStorage.removeItem(STORAGE_KEY);
+    } catch (_) { /* ignore */ }
+    stored = {};
+  }
+
+  const overrides = {};
+  const map = [
+    ['apiBase', 'api'],
+    ['imageRoot', 'images'],
+  ];
+  map.forEach(([key, query]) => {
+    const value = params.get(query);
+    if (value) {
+      overrides[key] = value;
+    }
+  });
+
+  const merged = { ...stored, ...overrides };
+  if (Object.keys(overrides).length) {
+    try {
+      window.localStorage && window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    } catch (_) { /* ignore write errors */ }
+  }
+
+  const candidateApi = merged.apiBase || null;
+  const candidateImage = merged.imageRoot
+    || (candidateApi && candidateApi.endsWith('/api')
+      ? candidateApi.replace(/\/api$/, '/assets/uploads')
+      : null);
+
+  if (candidateApi && !window.NVDS_API_BASE) {
+    window.NVDS_API_BASE = candidateApi;
+  }
+  if (candidateImage && !window.NVDS_IMAGE_ROOT) {
+    window.NVDS_IMAGE_ROOT = candidateImage;
+  }
+  window.NVDS_RUNTIME_CONFIG = merged;
+})();
+
 // Default image used when no image has been set via Admin yet
 // (e.g., first load on GitHub Pages fresh origin).
 const DEFAULT_FALLBACK_IMAGE = 'assets/placeholders/placeholder-landscape.jpg';

@@ -4,6 +4,7 @@ const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs-extra');
 const morgan = require('morgan');
+const database = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -30,35 +31,73 @@ const upload = multer({
 });
 
 let cachedContent = null;
+let cachedUpdatedAt = null;
 
 async function readContent() {
-  if (cachedContent) return cachedContent;
+  if (cachedContent) {
+    return { content: cachedContent, updatedAt: cachedUpdatedAt };
+  }
+  if (database.isEnabled()) {
+    try {
+      const payload = await database.loadContent();
+      cachedContent = payload.content || {};
+      cachedUpdatedAt = payload.updatedAt || null;
+      return { content: cachedContent, updatedAt: cachedUpdatedAt };
+    } catch (error) {
+      console.error('Unable to read content from MySQL. Falling back to JSON store.', error);
+    }
+  }
   try {
     const payload = await fs.readJson(CONTENT_FILE);
     if (payload && typeof payload.content === 'object') {
       cachedContent = payload.content;
-      return cachedContent;
+      cachedUpdatedAt = payload.updatedAt || null;
+      return { content: cachedContent, updatedAt: cachedUpdatedAt };
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {
-      console.warn('Unable to read content.json. Using empty payload.');
+      console.warn('Unable to read content.json. Using empty payload.', error);
     }
   }
   cachedContent = {};
-  return cachedContent;
+  cachedUpdatedAt = null;
+  return { content: cachedContent, updatedAt: cachedUpdatedAt };
 }
 
 async function writeContent(content) {
+  if (database.isEnabled()) {
+    try {
+      const payload = await database.saveContent(content);
+      cachedContent = payload.content || {};
+      cachedUpdatedAt = payload.updatedAt || new Date().toISOString();
+      return { content: cachedContent, updatedAt: cachedUpdatedAt };
+    } catch (error) {
+      console.error('Unable to persist content to MySQL. Falling back to JSON store.', error);
+    }
+  }
   cachedContent = { ...content };
+  cachedUpdatedAt = new Date().toISOString();
   const payload = {
     content: cachedContent,
-    updatedAt: new Date().toISOString(),
+    updatedAt: cachedUpdatedAt,
   };
   await fs.writeJson(CONTENT_FILE, payload, { spaces: 2 });
   return payload;
 }
 
 async function listSlotFiles() {
+  if (database.isEnabled()) {
+    try {
+      const stored = await database.listImages();
+      if (stored && Object.keys(stored).length) {
+        return stored;
+      }
+      // Fall back to the filesystem so legacy uploads still work even if the DB
+      // has not been populated yet.
+    } catch (error) {
+      console.error('Unable to list images from MySQL. Falling back to filesystem.', error);
+    }
+  }
   const entries = await fs.readdir(UPLOAD_DIR);
   const map = {};
   entries.forEach((name) => {
@@ -75,6 +114,13 @@ async function removeSlotFiles(slotId) {
       .filter((name) => name.startsWith(`${slotId}.`))
       .map((name) => fs.remove(path.join(UPLOAD_DIR, name)))
   );
+  if (database.isEnabled()) {
+    try {
+      await database.deleteImage(slotId);
+    } catch (error) {
+      console.error('Unable to delete image metadata in MySQL.', error);
+    }
+  }
 }
 
 async function persistImage(slotId, file) {
@@ -83,7 +129,15 @@ async function persistImage(slotId, file) {
   await removeSlotFiles(slotId);
   const target = path.join(UPLOAD_DIR, filename);
   await fs.writeFile(target, file.buffer);
-  return `/assets/uploads/${filename}`;
+  const publicPath = `/assets/uploads/${filename}`;
+  if (database.isEnabled()) {
+    try {
+      await database.saveImage(slotId, publicPath);
+    } catch (error) {
+      console.error('Unable to persist image metadata in MySQL.', error);
+    }
+  }
+  return publicPath;
 }
 
 app.use(cors());
@@ -95,8 +149,11 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.get('/api/content', async (_req, res) => {
-  const content = await readContent();
-  res.json({ content, updatedAt: new Date().toISOString() });
+  const payload = await readContent();
+  res.json({
+    content: payload.content,
+    updatedAt: payload.updatedAt || new Date().toISOString(),
+  });
 });
 
 app.put('/api/content', async (req, res) => {
