@@ -13,6 +13,22 @@ const API_BASE = (() => {
     return 'http://localhost:4000/api';
   }
 })();
+
+const API_ORIGIN = (() => {
+  try {
+    const fallbackOrigin = (typeof window !== 'undefined'
+      && window.location
+      && window.location.origin
+      && window.location.origin !== 'null')
+      ? window.location.origin
+      : 'http://localhost:4000';
+    return new URL(API_BASE, fallbackOrigin).origin;
+  } catch (error) {
+    console.warn('Unable to resolve API origin for assets.', error);
+    return '';
+  }
+})();
+
 const IMAGE_ROOT = (() => {
   if (typeof window !== 'undefined' && window.NVDS_IMAGE_ROOT) {
     return window.NVDS_IMAGE_ROOT.replace(/\/$/, '');
@@ -1459,9 +1475,18 @@ function resolveImageUrl(value) {
   if (value.startsWith('data:') || /^https?:\/\//i.test(value)) {
     return value;
   }
-  if (!IMAGE_ROOT) return value;
-  const separator = value.startsWith('/') ? '' : '/';
-  return `${IMAGE_ROOT}${separator}${value}`;
+  if (IMAGE_ROOT) {
+    const separator = value.startsWith('/') ? '' : '/';
+    return `${IMAGE_ROOT}${separator}${value}`;
+  }
+  if (API_ORIGIN) {
+    try {
+      return new URL(value, API_ORIGIN).toString();
+    } catch (error) {
+      console.warn('Unable to resolve relative image URL from API origin.', error);
+    }
+  }
+  return value;
 }
 
 async function importFromReadme() {

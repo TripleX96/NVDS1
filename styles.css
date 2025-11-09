@@ -13,7 +13,7 @@
   --radius-medium: 18px;
   --radius-small: 12px;
   /* Navbar and hero spacing */
-  --nav-top-gap: 15px;        /* space above navbar */
+  --nav-top-gap: 0px;         /* remove extra space above navbar */
   --nav-bottom-gap: 45px;     /* space between navbar and hero */
   font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -59,12 +59,10 @@ a {
 
 .site-header {
   position: sticky;
-  top: var(--nav-top-gap); /* gap above navbar */
+  top: 0;
   z-index: 100;
-  /* remove top padding; keep only the gap below to hero */
   padding: 0 0 var(--nav-bottom-gap);
-  /* remove page-wide light background behind the nav bar */
-  background: transparent;
+  background: var(--color-mint-soft);
   margin-bottom: 0;
 }
 
