@@ -1,5 +1,74 @@
-﻿const IMAGE_STORAGE_PREFIX = 'nvds_images_';
-const CONTENT_STORAGE_KEY = 'nvds_content';
+// Front-end helpers for the NVDS static build. Backend/API support has been removed, so the site now relies entirely on inline defaults and placeholders.
+
+let remoteContent = {};
+let remoteImages = {};
+
+// Default image used when no image has been set via Admin yet
+// (e.g., first load on GitHub Pages fresh origin).
+const DEFAULT_FALLBACK_IMAGE = 'assets/placeholders/placeholder-landscape.jpg';
+
+const ORIENTATION_FALLBACKS = Object.freeze({
+  portrait: 'assets/placeholders/placeholder-portrait.jpg',
+  tall: 'assets/placeholders/placeholder-portrait.jpg',
+  square: 'assets/placeholders/placeholder-square.jpg',
+  landscape: DEFAULT_FALLBACK_IMAGE,
+  wide: 'assets/placeholders/placeholder-wide.jpg',
+});
+
+const SLOT_ORIENTATION_OVERRIDES = Object.freeze({
+  'about-cta-backdrop': 'wide',
+  'about-hero-banner': 'wide',
+  'about-impact-primary': 'portrait',
+  'about-impact-secondary': 'square',
+  'about-impact-tertiary': 'square',
+  'about-pillar-one': 'landscape',
+  'about-pillar-two': 'landscape',
+  'blog-card-1': 'landscape',
+  'blog-card-2': 'landscape',
+  'blog-card-3': 'landscape',
+  'blog-education-hero': 'portrait',
+  'blog-hero-feature': 'portrait',
+  'blog-malnutrition-hero': 'portrait',
+  'blog-newsletter-image': 'portrait',
+  'blog-renewable-hero': 'portrait',
+  'cause-education-hero': 'portrait',
+  'cause-empowerment': 'landscape',
+  'cause-health': 'landscape',
+  'cause-healthcare-hero': 'portrait',
+  'cause-livelihoods-hero': 'portrait',
+  'cause-women': 'landscape',
+  'causes-cta-backdrop': 'wide',
+  'causes-focus-one': 'landscape',
+  'causes-focus-three': 'landscape',
+  'causes-focus-two': 'landscape',
+  'causes-hero-primary': 'portrait',
+  'causes-hero-secondary': 'square',
+  'causes-programmes-primary': 'portrait',
+  'contact-hero-image': 'portrait',
+  'contact-support-image': 'landscape',
+  'donate-hero-image': 'portrait',
+  'donate-image': 'portrait',
+  'donate-impact-image': 'portrait',
+  'focus-education': 'landscape',
+  'focus-health': 'landscape',
+  'focus-livelihoods': 'landscape',
+  'gallery-1': 'landscape',
+  'gallery-2': 'landscape',
+  'gallery-3': 'landscape',
+  'gallery-4': 'landscape',
+  'gallery-5': 'landscape',
+  'gallery-6': 'landscape',
+  'hero-primary': 'portrait',
+  'hero-secondary': 'square',
+  'mission-image': 'portrait',
+  'story-education': 'landscape',
+  'story-energy': 'landscape',
+  'story-health': 'landscape',
+  'volunteer-image': 'landscape',
+  'volunteer-page-hero': 'portrait',
+  'volunteer-stories-image': 'landscape',
+  'why-hero': 'wide',
+});
 
 const DEFAULT_CONTENT = {
   'nav.logoText': 'NVDS',
@@ -38,7 +107,7 @@ const DEFAULT_CONTENT = {
   'hero.description': "Partner with us to bring sustainable change across Nepal's rural heartlands. We empower families with education, health, and resilient livelihoods.",
   'hero.primaryButtonLabel': 'Join us',
   'hero.primaryButtonLink': 'donate.html',
-  'hero.secondaryButtonLabel': 'Admin panel',
+  'hero.secondaryButtonLabel': 'Explore causes',
   'mission.title': 'Every initiative sparks lasting impact',
   'mission.paragraphOne': 'Each programme is co-designed with communities, so support travels further. Volunteers and donors ensure that rural families have the tools to thrive.',
   'mission.paragraphTwo': 'From seed banks to classrooms, from health camps to safe water, we carry hope into every village we serve.',
@@ -348,13 +417,56 @@ const DEFAULT_CONTENT = {
   'donatePage.form.buttonLabel': 'Submit pledge',
 };
 
+function orientationFallbackForSlot(slotId) {
+  if (!slotId) return null;
+  const key = SLOT_ORIENTATION_OVERRIDES[slotId];
+  return key ? ORIENTATION_FALLBACKS[key] || null : null;
+}
+
+function inferOrientationFallback(element) {
+  const classList = element?.classList;
+  if (!classList) return null;
+  if (classList.contains('image-frame--portrait') || classList.contains('image-frame--tall')) {
+    return ORIENTATION_FALLBACKS.portrait;
+  }
+  if (classList.contains('image-frame--square')) {
+    return ORIENTATION_FALLBACKS.square;
+  }
+  if (
+    classList.contains('image-frame--wide') ||
+    classList.contains('image-frame--banner') ||
+    classList.contains('image-frame--panorama')
+  ) {
+    return ORIENTATION_FALLBACKS.wide;
+  }
+  if (classList.contains('image-frame--landscape')) {
+    return ORIENTATION_FALLBACKS.landscape;
+  }
+  if (classList.contains('slider__card') || classList.contains('blog-card__image') || classList.contains('card__image')) {
+    return ORIENTATION_FALLBACKS.landscape;
+  }
+  return null;
+}
+
+function resolveFallbackImage(element, slotId, nestedDefault) {
+  if (nestedDefault) return nestedDefault;
+  const elementDefault = element?.dataset?.defaultSrc;
+  if (elementDefault) return elementDefault;
+  const slotFallback = orientationFallbackForSlot(slotId);
+  if (slotFallback) return slotFallback;
+  const classFallback = inferOrientationFallback(element);
+  if (classFallback) return classFallback;
+  return DEFAULT_FALLBACK_IMAGE;
+}
+
 function applyImageToElement(element, dataUrl) {
   if (!element) return;
 
+  const slotId = element.dataset ? element.dataset.imageSlot : undefined;
   const isImgElement = element.tagName === 'IMG';
   const nestedImage = isImgElement ? element : element.querySelector('[data-slot-image]');
-  const defaultSrc = nestedImage?.dataset.defaultSrc;
   const hasBackgroundTarget = !nestedImage || isImgElement;
+  const fallbackSrc = resolveFallbackImage(element, slotId, nestedImage?.dataset?.defaultSrc);
 
   if (dataUrl) {
     if (nestedImage) {
@@ -371,79 +483,51 @@ function applyImageToElement(element, dataUrl) {
   }
 
   if (nestedImage) {
-    if (defaultSrc) {
-      nestedImage.src = defaultSrc;
+    if (fallbackSrc) {
+      nestedImage.src = fallbackSrc;
       nestedImage.hidden = false;
       element.classList.remove('is-empty');
+      if (hasBackgroundTarget && !isImgElement) {
+        element.style.backgroundImage = `url("${fallbackSrc}")`;
+      } else {
+        element.style.removeProperty('background-image');
+      }
     } else {
       nestedImage.removeAttribute('src');
       nestedImage.hidden = true;
       element.classList.add('is-empty');
+      element.style.removeProperty('background-image');
     }
-  } else {
-    element.classList.add('is-empty');
+    return;
   }
 
-  element.style.removeProperty('background-image');
+  if (fallbackSrc) {
+    element.classList.remove('is-empty');
+    element.style.backgroundImage = `url("${fallbackSrc}")`;
+  } else {
+    element.classList.add('is-empty');
+    element.style.removeProperty('background-image');
+  }
 }
 
-function loadStoredImages() {
+function loadRemoteImages() {
+  remoteImages = {};
   const slots = document.querySelectorAll('[data-image-slot]');
   slots.forEach((slot) => {
-    const key = `${IMAGE_STORAGE_PREFIX}${slot.dataset.imageSlot}`;
-    const stored = localStorage.getItem(key);
-    if (stored === '__IDB__' || stored === null) {
-      idbGetImage(slot.dataset.imageSlot)
-        .then(async (data) => {
-          if (data) { applyImageToElement(slot, data); return; }
-          // Fallback: if a blog article hero image is missing, use its corresponding card image
-          const slotId = slot.dataset.imageSlot || '';
-          const map = {
-            'blog-malnutrition-hero': 'blog-card-1',
-            'blog-education-hero': 'blog-card-2',
-            'blog-renewable-hero': 'blog-card-3',
-            // Causes detail pages fallback to focus card images
-            'cause-healthcare-hero': 'causes-focus-one',
-            'cause-education-hero': 'causes-focus-two',
-            'cause-livelihoods-hero': 'causes-focus-three',
-          };
-          const cardId = map[slotId];
-          if (cardId) {
-            const cardKey = `${IMAGE_STORAGE_PREFIX}${cardId}`;
-            const fromLs = localStorage.getItem(cardKey);
-            if (fromLs && fromLs !== '__IDB__') {
-              applyImageToElement(slot, fromLs);
-              return;
-            }
-            try {
-              const fromIdb = await idbGetImage(cardId);
-              if (fromIdb) { applyImageToElement(slot, fromIdb); return; }
-            } catch {}
-          }
-          applyImageToElement(slot, null);
-        })
-        .catch(() => applyImageToElement(slot, null));
-    } else {
-      applyImageToElement(slot, stored);
-    }
+    const slotId = slot.dataset.imageSlot;
+    if (!slotId) return;
+    const stored = remoteImages[slotId];
+    applyImageToElement(slot, stored || null);
   });
 }
 
-function readStoredContent() {
-  try {
-    const raw = localStorage.getItem(CONTENT_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed !== null ? parsed : {};
-  } catch (error) {
-    console.warn('Unable to read stored content, falling back to defaults.', error);
-    return {};
-  }
+function loadRemoteContent() {
+  remoteContent = {};
+  return getCurrentContent();
 }
 
 function getCurrentContent() {
-  const stored = readStoredContent();
-  return { ...DEFAULT_CONTENT, ...stored };
+  return { ...DEFAULT_CONTENT, ...remoteContent };
 }
 
 function applyContentToPage() {
@@ -650,49 +734,11 @@ function setupSliders() {
   });
 }
 
-async function maybeImportFromReadmeOnFirstLoad() {
-  try {
-    const existing = localStorage.getItem(CONTENT_STORAGE_KEY);
-    if (existing) return false;
-    const res = await fetch('read.md', { cache: 'no-store' });
-    if (!res.ok) return false;
-    const md = await res.text();
-    function extractJson(mdText) {
-      const startMarker = '<!-- nvds-content:start -->';
-      const endMarker = '<!-- nvds-content:end -->';
-      let block = '';
-      const s = mdText.indexOf(startMarker);
-      const e = mdText.indexOf(endMarker);
-      if (s !== -1 && e !== -1 && e > s) {
-        block = mdText.slice(s, e);
-      }
-      if (!block) {
-        const m = mdText.match(/```json([\s\S]*?)```/i);
-        if (m) block = m[1];
-      }
-      if (!block) return null;
-      block = block.replace(/^json\s*/i, '');
-      try { return JSON.parse(block); } catch (err) { return null; }
-    }
-    const payload = extractJson(md);
-    if (!payload) return false;
-    // Store only keys differing from defaults
-    const diff = {};
-    Object.keys(payload).forEach((k) => { if (DEFAULT_CONTENT[k] !== payload[k]) diff[k] = payload[k]; });
-    if (Object.keys(diff).length > 0) {
-      localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(diff));
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await maybeImportFromReadmeOnFirstLoad();
+document.addEventListener('DOMContentLoaded', () => {
+  loadRemoteContent();
   applyContentToPage();
-  loadStoredImages();
+  loadRemoteImages();
   setupSliders();
   setupChatWidget();
 
@@ -921,85 +967,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  window.addEventListener('storage', (event) => {
-    if (!event.key) return;
-    if (event.key === CONTENT_STORAGE_KEY) {
-      applyContentToPage();
-      return;
-    }
-    if (event.key.startsWith(IMAGE_STORAGE_PREFIX)) {
-      const slotId = event.key.replace(IMAGE_STORAGE_PREFIX, '');
-      const element = document.querySelector(`[data-image-slot="${slotId}"]`);
-      if (!element) {
-        // If a blog card image changed, and the corresponding article hero exists but is empty, update it as a convenience
-        const cardToHero = {
-          'blog-card-1': 'blog-malnutrition-hero',
-          'blog-card-2': 'blog-education-hero',
-          'blog-card-3': 'blog-renewable-hero',
-          // Causes: focus card -> cause detail hero
-          'causes-focus-one': 'cause-healthcare-hero',
-          'causes-focus-two': 'cause-education-hero',
-          'causes-focus-three': 'cause-livelihoods-hero',
-        };
-        const heroSlot = cardToHero[slotId];
-        if (heroSlot) {
-          const heroEl = document.querySelector(`[data-image-slot="${heroSlot}"]`);
-          if (heroEl && heroEl.classList.contains('is-empty')) {
-            const value = event.newValue;
-            if (value === '__IDB__' || value === null) {
-              idbGetImage(slotId)
-                .then((data) => applyImageToElement(heroEl, data || null))
-                .catch(() => {});
-            } else {
-              applyImageToElement(heroEl, value);
-            }
-          }
-        }
-        return;
-      }
-      if (event.newValue === '__IDB__' || event.newValue === null) {
-        idbGetImage(slotId)
-          .then((data) => applyImageToElement(element, data || null))
-          .catch(() => applyImageToElement(element, null));
-      } else {
-        applyImageToElement(element, event.newValue);
-      }
-    }
-  });
 });
-
-// ---- IndexedDB helper for reading images saved when localStorage is full ----
-let __nvds_imageDbPromise;
-function openImageDb() {
-  if (__nvds_imageDbPromise) return __nvds_imageDbPromise;
-  __nvds_imageDbPromise = new Promise((resolve, reject) => {
-    try {
-      const request = indexedDB.open('nvds-admin', 1);
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains('images')) {
-          db.createObjectStore('images');
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    } catch (err) {
-      reject(err);
-    }
-  });
-  return __nvds_imageDbPromise;
-}
-
-async function idbGetImage(slotId) {
-  const db = await openImageDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('images', 'readonly');
-    tx.onerror = () => reject(tx.error);
-    const req = tx.objectStore('images').get(slotId);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
 
 let chatElements;
 let chatInitialized = false;
