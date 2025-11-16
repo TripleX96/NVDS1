@@ -1,7 +1,71 @@
+<<<<<<< HEAD
 // Front-end helpers for the NVDS static build. Backend/API support has been removed, so the site now relies entirely on inline defaults and placeholders.
 
 let remoteContent = {};
 let remoteImages = {};
+=======
+// Shared runtime configuration so public pages can reuse the same backend
+// target that was selected in the admin panel (stored in localStorage).
+(function bootstrapNvdsRuntimeConfig() {
+  if (typeof window === 'undefined') return;
+  const STORAGE_KEY = 'nvds_admin_config';
+  let stored = {};
+
+  try {
+    const raw = window.localStorage ? window.localStorage.getItem(STORAGE_KEY) : null;
+    stored = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    stored = {};
+  }
+
+  let params;
+  try {
+    params = new URLSearchParams(window.location.search || '');
+  } catch (_) {
+    params = new URLSearchParams();
+  }
+
+  if (params.get('resetConfig') === '1') {
+    try {
+      window.localStorage && window.localStorage.removeItem(STORAGE_KEY);
+    } catch (_) { /* ignore */ }
+    stored = {};
+  }
+
+  const overrides = {};
+  const map = [
+    ['apiBase', 'api'],
+    ['imageRoot', 'images'],
+  ];
+  map.forEach(([key, query]) => {
+    const value = params.get(query);
+    if (value) {
+      overrides[key] = value;
+    }
+  });
+
+  const merged = { ...stored, ...overrides };
+  if (Object.keys(overrides).length) {
+    try {
+      window.localStorage && window.localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    } catch (_) { /* ignore write errors */ }
+  }
+
+  const candidateApi = merged.apiBase || null;
+  const candidateImage = merged.imageRoot
+    || (candidateApi && candidateApi.endsWith('/api')
+      ? candidateApi.replace(/\/api$/, '/assets/uploads')
+      : null);
+
+  if (candidateApi && !window.NVDS_API_BASE) {
+    window.NVDS_API_BASE = candidateApi;
+  }
+  if (candidateImage && !window.NVDS_IMAGE_ROOT) {
+    window.NVDS_IMAGE_ROOT = candidateImage;
+  }
+  window.NVDS_RUNTIME_CONFIG = merged;
+})();
+>>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7
 
 // Default image used when no image has been set via Admin yet
 // (e.g., first load on GitHub Pages fresh origin).
@@ -69,6 +133,68 @@ const SLOT_ORIENTATION_OVERRIDES = Object.freeze({
   'volunteer-stories-image': 'landscape',
   'why-hero': 'wide',
 });
+<<<<<<< HEAD
+=======
+
+const API_BASE = (() => {
+  if (typeof window !== 'undefined' && window.NVDS_API_BASE) {
+    return window.NVDS_API_BASE.replace(/\/$/, '');
+  }
+  try {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : 'http://localhost:4000';
+    return `${origin.replace(/\/$/, '')}/api`;
+  } catch (error) {
+    console.warn('Falling back to localhost API base.', error);
+    return 'http://localhost:4000/api';
+  }
+})();
+
+const API_ORIGIN = (() => {
+  try {
+    const fallbackOrigin = (typeof window !== 'undefined'
+      && window.location
+      && window.location.origin
+      && window.location.origin !== 'null')
+      ? window.location.origin
+      : 'http://localhost:4000';
+    return new URL(API_BASE, fallbackOrigin).origin;
+  } catch (error) {
+    console.warn('Unable to resolve API origin for assets.', error);
+    return '';
+  }
+})();
+
+const IMAGE_ROOT = (() => {
+  if (typeof window !== 'undefined' && window.NVDS_IMAGE_ROOT) {
+    return window.NVDS_IMAGE_ROOT.replace(/\/$/, '');
+  }
+  return '';
+})();
+
+let remoteContent = {};
+let remoteImages = {};
+
+function resolveImageUrl(value) {
+  if (!value) return null;
+  if (value.startsWith('data:') || /^https?:\/\//i.test(value)) {
+    return value;
+  }
+  if (IMAGE_ROOT) {
+    const needsSlash = value.startsWith('/') ? '' : '/';
+    return `${IMAGE_ROOT}${needsSlash}${value}`;
+  }
+  if (API_ORIGIN) {
+    try {
+      return new URL(value, API_ORIGIN).toString();
+    } catch (error) {
+      console.warn('Unable to resolve relative image URL from API origin.', error);
+    }
+  }
+  return value;
+}
+>>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7
 
 const DEFAULT_CONTENT = {
   'nav.logoText': 'NVDS',
@@ -510,8 +636,28 @@ function applyImageToElement(element, dataUrl) {
   }
 }
 
+<<<<<<< HEAD
 function loadRemoteImages() {
   remoteImages = {};
+=======
+async function loadRemoteImages() {
+  try {
+    const res = await fetch(`${API_BASE}/images`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Image manifest request failed: ${res.status}`);
+    const payload = await res.json();
+    const manifest = payload && typeof payload.images === 'object' ? payload.images : {};
+    remoteImages = {};
+    Object.entries(manifest).forEach(([slotId, url]) => {
+      if (typeof url === 'string') {
+        remoteImages[slotId] = resolveImageUrl(url);
+      }
+    });
+  } catch (error) {
+    remoteImages = {};
+    console.error('Unable to fetch remote images, using placeholders.', error);
+  }
+
+>>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7
   const slots = document.querySelectorAll('[data-image-slot]');
   slots.forEach((slot) => {
     const slotId = slot.dataset.imageSlot;
@@ -521,8 +667,25 @@ function loadRemoteImages() {
   });
 }
 
+<<<<<<< HEAD
 function loadRemoteContent() {
   remoteContent = {};
+=======
+async function loadRemoteContent() {
+  try {
+    const res = await fetch(`${API_BASE}/content`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`Content request failed: ${res.status}`);
+    const payload = await res.json();
+    if (payload && typeof payload.content === 'object') {
+      remoteContent = payload.content;
+    } else {
+      remoteContent = {};
+    }
+  } catch (error) {
+    remoteContent = {};
+    console.error('Unable to fetch remote content, using defaults.', error);
+  }
+>>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7
   return getCurrentContent();
 }
 
@@ -735,10 +898,17 @@ function setupSliders() {
 }
 
 
+<<<<<<< HEAD
 document.addEventListener('DOMContentLoaded', () => {
   loadRemoteContent();
   applyContentToPage();
   loadRemoteImages();
+=======
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadRemoteContent();
+  applyContentToPage();
+  await loadRemoteImages();
+>>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7
   setupSliders();
   setupChatWidget();
 
