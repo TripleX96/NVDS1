@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="assets/favicon.png" data-image-slot="site-favicon" data-default-src="assets/favicon.png" crossorigin="anonymous">
 </head>
 <body>
   <header class="site-header">
@@ -34,50 +35,51 @@
           <a href="blog.html" data-content-key="nav.blog" data-content-href-key="nav.blogLink">Blog</a>
           <a href="volunteer.html" data-content-key="nav.volunteer" data-content-href-key="nav.volunteerLink">Volunteer</a>
           <a href="contact.html" data-content-key="nav.contact" data-content-href-key="nav.contactLink">Contact</a>
+          <a class="site-header__nav-cta" href="donate.html" data-content-key="nav.donate" data-content-href-key="nav.donateLink">Donate Now</a>
         </nav>
         <a class="site-header__cta" href="donate.html" data-content-key="nav.donate" data-content-href-key="nav.donateLink">Donate Now</a>
       </div>
     </div>
   </header>
 
-  <header class="hero" id="home">
-    <div class="container hero__inner">
-      <div class="hero__text">
-        <div class="hero__badge" data-content-key="hero.badge">Nepal Village Development Service</div>
-        <h1 class="hero__headline">
-          <span data-content-key="hero.headingLead">Empowering rural</span>
-          <span class="hero__headline-emphasis" data-content-key="hero.headingEmphasis">communities</span>
-          <span data-content-key="hero.headingTrail">in Nepal</span>
-        </h1>
-        <p data-content-key="hero.description">Partner with us to bring sustainable change across Nepal's rural heartlands. We empower families with education, health, and resilient livelihoods.</p>
-        <div class="hero__actions">
-          <a href="donate.html" class="btn btn--primary" data-content-key="hero.primaryButtonLabel" data-content-href-key="hero.primaryButtonLink">Join us</a>
-          <a href="causes.html" class="btn btn--ghost">Explore causes</a>
-        </div>
-
-        <div class="hero__stats" aria-label="Key impact metrics">
-          <div class="hero__stat">
-            <span class="hero__stat-number">25+</span>
-            <span class="hero__stat-label">Years of service</span>
-          </div>
-          <div class="hero__stat">
-            <span class="hero__stat-number">100</span>
-            <span class="hero__stat-label">Villages reached</span>
-          </div>
-          <div class="hero__stat">
-            <span class="hero__stat-number">50k</span>
-            <span class="hero__stat-label">People impacted</span>
-          </div>
-        </div>
-      </div>
-      <div class="hero__media" aria-hidden="true">
-        <div class="hero__media-primary image-frame" data-image-slot="hero-primary"></div>
-        <div class="hero__media-secondary image-frame" data-image-slot="hero-secondary"></div>
-      </div>
-    </div>
-  </header>
-
   <main>
+    <!-- Hero sits inside <main> so --main-top-spacing in CSS controls the nav-to-hero gap -->
+    <header class="hero" id="home">
+      <div class="container hero__inner">
+        <div class="hero__text">
+          <div class="hero__badge" data-content-key="hero.badge">Nepal Village Development Service</div>
+          <h1 class="hero__headline">
+            <span data-content-key="hero.headingLead">Empowering rural</span>
+            <span class="hero__headline-emphasis" data-content-key="hero.headingEmphasis">communities</span>
+            <span data-content-key="hero.headingTrail">in Nepal</span>
+          </h1>
+          <p data-content-key="hero.description">Partner with us to bring sustainable change across Nepal's rural heartlands. We empower families with education, health, and resilient livelihoods.</p>
+          <div class="hero__actions">
+            <a href="donate.html" class="btn btn--primary" data-content-key="hero.primaryButtonLabel" data-content-href-key="hero.primaryButtonLink">Join us</a>
+            <a href="causes.html" class="btn btn--ghost">Explore causes</a>
+          </div>
+
+          <div class="hero__stats" aria-label="Key impact metrics">
+            <div class="hero__stat">
+              <span class="hero__stat-number">25+</span>
+              <span class="hero__stat-label">Years of service</span>
+            </div>
+            <div class="hero__stat">
+              <span class="hero__stat-number">100</span>
+              <span class="hero__stat-label">Villages reached</span>
+            </div>
+            <div class="hero__stat">
+              <span class="hero__stat-number">50k</span>
+              <span class="hero__stat-label">People impacted</span>
+            </div>
+          </div>
+        </div>
+        <div class="hero__media" aria-hidden="true">
+          <div class="hero__media-primary image-frame" data-image-slot="hero-primary"></div>
+          <div class="hero__media-secondary image-frame" data-image-slot="hero-secondary"></div>
+        </div>
+      </div>
+    </header>
     <section class="section mission" id="mission">
       <div class="container mission__inner">
         <div class="mission__text">
@@ -236,12 +238,8 @@
       <div class="quote__mark" data-image-slot="nav-logo">
         <img src="assets/nvds-logo.svg" alt="NVDS mark" data-slot-image data-default-src="assets/nvds-logo.svg">
       </div>
-<<<<<<< HEAD
-      <h2 class="quote__text" data-content-key="quote.text">â€œNVDS has truly changed lives with their dedication and support. Their efforts have given hope to so many.â€</h2>
-=======
-      <h2 class="quote__text" data-content-key="quote.text">“NVDS has truly changed lives with their dedication and support. Their efforts have given hope to so many.”</h2>
->>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7
-      <p class="quote__attribution" data-content-key="quote.attribution">Volunteer Coordinator</p>
+      <h2 class="quote__text" data-content-key="quote.text">�NVDS has truly changed lives with their dedication and support. Their efforts have given hope to so many.�</h2>
+      <p class="quote__attribution" data-content-key="quote.attribution">— Emily Carter, Volunteer Coordinator</p>
     </div>
   </section>
 
@@ -320,14 +318,11 @@
       </div>
     </div>
   </footer>
+
   <script src="script.js"></script>
 </body>
 </html>
 
 
 
-<<<<<<< HEAD
 
-
-=======
->>>>>>> 5dfc95146ef0309d4f72b57c30740111d82d54d7

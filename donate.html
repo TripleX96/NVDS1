@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/png" href="assets/favicon.png" data-image-slot="site-favicon" data-default-src="assets/favicon.png" crossorigin="anonymous">
 </head>
 <body class="donate-page">
   <header class="site-header">
@@ -41,31 +42,45 @@
   </header>
 
   <main>
-    <section class="donate-hero" id="hero">
-      <div class="container donate-hero__grid">
-        <div class="donate-hero__content">
-          <span class="donate-hero__badge" data-content-key="donatePage.hero.badge">Support NVDS</span>
-          <h1 class="donate-hero__heading" data-content-key="donatePage.hero.heading">Your generosity powers rural resilience</h1>
-          <p class="donate-hero__description" data-content-key="donatePage.hero.description">
-            Every contribution helps deliver healthcare, education, and sustainable livelihoods to families across Nepalâ€™s villages.
-          </p>
-          <div class="donate-hero__actions">
-            <a class="btn btn--primary" href="#" data-content-key="donatePage.hero.primaryButtonLabel" data-content-href-key="donatePage.hero.primaryButtonHref">Give monthly</a>
-            <a class="btn btn--ghost" href="#" data-content-key="donatePage.hero.secondaryButtonLabel" data-content-href-key="donatePage.hero.secondaryButtonHref">Make a one-time gift</a>
-          </div>
-          <ul class="donate-hero__list">
-            <li data-content-key="donatePage.hero.point1">Transparent reporting with quarterly updates</li>
-            <li data-content-key="donatePage.hero.point2">Community-led governance for every project</li>
-            <li data-content-key="donatePage.hero.point3">Tax-deductible receipts provided on request</li>
-          </ul>
+    <section class="donate-form" id="form">
+      <div class="container donate-form__card">
+        <div style="display:grid;place-items:center;gap:12px;margin-bottom:6px">
+          <img src="assets/nvds-logo.svg" alt="NVDS logo" style="width:72px;height:72px;object-fit:contain;opacity:.9">
+          <strong style="color:var(--color-green-dark);">Nepal Village Development Service</strong>
+          <a class="btn btn--primary" href="contact.html" style="width:max(240px,40%);text-align:center">Get Account Details</a>
         </div>
-        <div class="donate-hero__media image-frame image-frame--portrait" data-image-slot="donate-hero-image"></div>
+        <h2>Personal details</h2>
+        <p>Please confirm your details so we can email your confirmation receipt.</p>
+        <form class="donate-form__fields" action="https://api.web3forms.com/submit" method="POST" enctype="multipart/form-data">
+          <input type="hidden" name="access_key" value="1c5cb0ac-a882-4363-b0ac-1e89ed9fdc05">
+          <input type="hidden" name="subject" value="New donation pledge with receipt">
+          <label>
+            <span>Email</span>
+            <input type="email" name="email" placeholder="Enter your email address" required>
+          </label>
+          <label>
+            <span>Full name</span>
+            <input type="text" name="name" placeholder="Enter your full name" required>
+          </label>
+          <label>
+            <span>Donation amount</span>
+            <input type="text" name="amount" placeholder="Enter donation amount" required>
+          </label>
+          <label>
+            <span>Transaction receipt</span>
+            <div class="file-upload">
+              <button type="button" class="btn btn--ghost" data-file-trigger>Upload receipt</button>
+              <input type="file" name="attachments[]" accept=".jpg,.jpeg,.png,.pdf" multiple hidden>
+              <span class="file-upload__names" data-file-names></span>
+            </div>
+          </label>
+          <button type="submit" class="btn btn--primary donate-form__submit">Submit</button>
+        </form>
       </div>
     </section>
-
     <section class="donate-options" id="options">
       <div class="container donate-options__header">
-        <h2 data-content-key="donatePage.options.title">Choose the giving option thatâ€™s right for you</h2>
+        <h2 data-content-key="donatePage.options.title">Choose the giving option that’s right for you</h2>
         <p data-content-key="donatePage.options.description">
           Whether you donate monthly or once, your support ensures programmes can respond to urgent needs while planning for long-term impact.
         </p>
@@ -138,44 +153,8 @@
         </div>
         <div class="donate-impact__media image-frame image-frame--tall" data-image-slot="donate-impact-image"></div>
       </div>
-  </section>
- 
-        <section class="donate-form" id="form">
-      <div class="container donate-form__card">
-        <div style="display:grid;place-items:center;gap:12px;margin-bottom:6px">
-          <img src="assets/nvds-logo.svg" alt="NVDS logo" style="width:72px;height:72px;object-fit:contain;opacity:.9">
-          <strong style="color:var(--color-green-dark);">Nepal Village Development Service</strong>
-          <a class="btn btn--primary" href="contact.html" style="width:max(240px,40%);text-align:center">Get Account Details</a>
-        </div>
-        <h2>Personal details</h2>
-        <p>Please confirm your details so we can email your confirmation receipt.</p>
-        <form class="donate-form__fields" action="https://api.web3forms.com/submit" method="POST" enctype="multipart/form-data">
-          <input type="hidden" name="access_key" value="1c5cb0ac-a882-4363-b0ac-1e89ed9fdc05">
-          <input type="hidden" name="subject" value="New donation pledge with receipt">
-          <label>
-            <span>Email</span>
-            <input type="email" name="email" placeholder="Enter your email address" required>
-          </label>
-          <label>
-            <span>Full name</span>
-            <input type="text" name="name" placeholder="Enter your full name" required>
-          </label>
-          <label>
-            <span>Donation amount</span>
-            <input type="text" name="amount" placeholder="Enter donation amount" required>
-          </label>
-          <label>
-            <span>Transaction receipt</span>
-            <div class="file-upload">
-              <button type="button" class="btn btn--ghost" data-file-trigger>Upload receipt</button>
-              <input type="file" name="attachments[]" accept=".jpg,.jpeg,.png,.pdf" multiple hidden>
-              <span class="file-upload__names" data-file-names></span>
-            </div>
-          </label>
-          <button type="submit" class="btn btn--primary donate-form__submit">Submit</button>
-        </form>
-      </div>
     </section>
+ 
   </main>
 
   <footer class="footer" id="site-footer">
@@ -251,10 +230,10 @@
       </div>
     </div>
   </footer>
+
+  
+
   <script src="script.js"></script>
 </body>
 </html>
-
-
-
 
