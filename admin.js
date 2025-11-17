@@ -1,6 +1,128 @@
 const IMAGE_STORAGE_PREFIX = 'nvds_images_';
 const CONTENT_STORAGE_KEY = 'nvds_content';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const ADMIN_CONFIG_STORAGE_KEY = 'nvds_admin_config';
+
+function readAdminConfigSnapshot() {
+  try {
+    const raw = localStorage.getItem(ADMIN_CONFIG_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch (error) {
+    console.warn('Unable to parse stored admin configuration.', error);
+    return {};
+  }
+}
+
+function getApiBase() {
+  try {
+    if (typeof window !== 'undefined' && window.NVDS_API_BASE) {
+      return window.NVDS_API_BASE;
+    }
+  } catch {}
+  const stored = readAdminConfigSnapshot();
+  if (stored.apiBase) return stored.apiBase;
+  try {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : '';
+    if (origin) {
+      return `${origin.replace(/\/$/, '')}/api`;
+    }
+  } catch {}
+  return 'http://localhost:4000/api';
+}
+
+function buildApiUrl(path) {
+  const base = getApiBase();
+  if (!base) return '';
+  const normalizedBase = base.replace(/\/$/, '');
+  const normalizedPath = String(path || '').replace(/^\//, '');
+  return `${normalizedBase}/${normalizedPath}`;
+}
+
+function getImageRoot() {
+  try {
+    if (typeof window !== 'undefined' && window.NVDS_IMAGE_ROOT) {
+      return window.NVDS_IMAGE_ROOT;
+    }
+  } catch {}
+  const stored = readAdminConfigSnapshot();
+  if (stored.imageRoot) return stored.imageRoot;
+  const apiBase = getApiBase();
+  if (!apiBase) return '';
+  if (apiBase.endsWith('/api')) {
+    return `${apiBase.slice(0, -4)}assets/uploads`;
+  }
+  return `${apiBase.replace(/\/$/, '')}/assets/uploads`;
+}
+
+function resolveImageUrl(input) {
+  if (!input) return null;
+  if (/^(data:|blob:|https?:|\/\/)/i.test(input)) {
+    if (typeof input === 'string' && input.startsWith('//')) {
+      try { return `${window.location.protocol}${input}`; } catch { return `https:${input}`; }
+    }
+    return input;
+  }
+  const normalized = input.startsWith('/') ? input : `/${input}`;
+  if (normalized.startsWith('/assets/uploads')) {
+    const root = getImageRoot();
+    if (root) {
+      const trimmed = normalized.replace(/^\/assets\/uploads\/?/, '');
+      return `${root.replace(/\/$/, '')}/${trimmed}`;
+    }
+  }
+  try {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : '';
+    if (origin) {
+      return `${origin.replace(/\/$/, '')}${normalized}`;
+    }
+  } catch {}
+  const apiBase = getApiBase();
+  if (apiBase) {
+    const origin = apiBase.replace(/\/api$/, '');
+    return `${origin.replace(/\/$/, '')}${normalized}`;
+  }
+  return normalized;
+}
+
+function writeContentCache(diff) {
+  const sanitized = {};
+  if (diff && typeof diff === 'object') {
+    Object.entries(diff).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        sanitized[key] = value;
+      }
+    });
+  }
+  if (Object.keys(sanitized).length === 0) {
+    localStorage.removeItem(CONTENT_STORAGE_KEY);
+  } else {
+    localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(sanitized));
+  }
+  return sanitized;
+}
+
+function pruneImageCache(validIds) {
+  try {
+    const keep = new Set(validIds || []);
+    const removals = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(IMAGE_STORAGE_PREFIX)) {
+        const slotId = key.replace(IMAGE_STORAGE_PREFIX, '');
+        if (!keep.has(slotId)) {
+          removals.push(key);
+        }
+      }
+    }
+    removals.forEach((key) => localStorage.removeItem(key));
+  } catch {}
+}
 
 const DEFAULT_CONTENT = {
   'nav.logoText': 'NVDS',
@@ -348,6 +470,104 @@ const DEFAULT_CONTENT = {
   'donatePage.form.messagePlaceholder': "Tell us how you'd like to direct your support",
   'donatePage.form.buttonLabel': 'Submit pledge',
 };
+
+async function pullContentFromBackend() {
+  const url = buildApiUrl('/content');
+  if (!url || typeof fetch !== 'function') return false;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json().catch(() => ({}));
+    const next = payload && typeof payload.content === 'object' && payload.content !== null
+      ? payload.content
+      : {};
+    writeContentCache(next);
+    return true;
+  } catch (error) {
+    console.warn('Unable to fetch content from backend.', error);
+    return false;
+  }
+}
+
+async function syncContentToBackend(diff) {
+  const url = buildApiUrl('/content');
+  if (!url || typeof fetch !== 'function') {
+    throw new Error('API base is not configured.');
+  }
+  const payload = { content: diff && typeof diff === 'object' ? diff : {} };
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Unable to persist content (status ${res.status})`);
+  }
+  const response = await res.json().catch(() => ({}));
+  if (response && typeof response.content === 'object' && response.content !== null) {
+    const sanitized = writeContentCache(response.content);
+    contentState = { ...DEFAULT_CONTENT, ...sanitized };
+    syncContentFields();
+  }
+}
+
+async function pullImagesFromBackend() {
+  const url = buildApiUrl('/images');
+  if (!url || typeof fetch !== 'function') return false;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json().catch(() => ({}));
+    const images = payload && typeof payload.images === 'object' && payload.images !== null
+      ? payload.images
+      : {};
+    const seen = new Set();
+    Object.entries(images).forEach(([slotId, src]) => {
+      const resolved = resolveImageUrl(src);
+      if (resolved) {
+        localStorage.setItem(`${IMAGE_STORAGE_PREFIX}${slotId}`, resolved);
+        seen.add(slotId);
+      }
+    });
+    pruneImageCache(seen);
+    return true;
+  } catch (error) {
+    console.warn('Unable to fetch images from backend.', error);
+    return false;
+  }
+}
+
+async function uploadImageToBackend(slotId, blob, originalName) {
+  const target = buildApiUrl(`/images/${encodeURIComponent(slotId)}`);
+  if (!target || typeof fetch !== 'function') {
+    throw new Error('API base is not configured.');
+  }
+  const formData = new FormData();
+  formData.append('file', blob, originalName || `${slotId}.webp`);
+  const res = await fetch(target, { method: 'POST', body: formData });
+  if (!res.ok) {
+    throw new Error(`Image upload failed (status ${res.status})`);
+  }
+  const payload = await res.json().catch(() => ({}));
+  const remoteUrl = resolveImageUrl(payload && payload.url ? payload.url : '');
+  if (!remoteUrl) {
+    throw new Error('Backend did not return a public image URL.');
+  }
+  localStorage.setItem(`${IMAGE_STORAGE_PREFIX}${slotId}`, remoteUrl);
+  try { await idbDeleteImage(slotId); } catch {}
+  return remoteUrl;
+}
+
+async function deleteImageFromBackend(slotId) {
+  const target = buildApiUrl(`/images/${encodeURIComponent(slotId)}`);
+  if (!target || typeof fetch !== 'function') {
+    throw new Error('API base is not configured.');
+  }
+  const res = await fetch(target, { method: 'DELETE' });
+  if (!res.ok) {
+    throw new Error(`Delete failed with status ${res.status}`);
+  }
+}
 
 const CONTENT_SECTIONS = [
   {
@@ -1425,17 +1645,23 @@ async function importFromReadme() {
       return out;
     })(contentState, DEFAULT_CONTENT);
 
-    if (Object.keys(diff).length === 0) {
-      localStorage.removeItem(CONTENT_STORAGE_KEY);
-    } else {
-      localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(diff));
-    }
-
+    writeContentCache(diff);
     syncContentFields();
     CONTENT_SECTIONS.forEach((s)=> markSectionSaved(s.id));
     refreshActivePageBadge();
     updatePendingChangesMetric();
-    window.alert('Imported content from README successfully.');
+    let synced = false;
+    try {
+      await syncContentToBackend(diff);
+      synced = true;
+    } catch (apiError) {
+      console.warn('Unable to sync imported content to backend.', apiError);
+    }
+    if (synced) {
+      window.alert('Imported content from README successfully.');
+    } else {
+      window.alert('Imported content locally, but syncing to the backend failed. Please try again once the admin server is reachable.');
+    }
   } catch (error) {
     console.error('Import from README failed', error);
     window.alert('Could not import from read.md');
@@ -1487,29 +1713,30 @@ function buildDiff(state) {
 
 function persistContentImmediate() {
   const diff = buildDiff(contentState);
-  if (Object.keys(diff).length === 0) {
-    localStorage.removeItem(CONTENT_STORAGE_KEY);
-  } else {
-    localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(diff));
-  }
+  writeContentCache(diff);
+  return diff;
 }
 
 const schedulePersist = debounce(() => {
+  flushPendingContent();
+}, 400);
+
+async function flushPendingContent() {
   const pending = Array.from(dirtySections);
   if (pending.length === 0) return;
   try {
-    persistContentImmediate();
+    const diff = persistContentImmediate();
+    await syncContentToBackend(diff);
     pending.forEach(markSectionSaved);
     dirtySections.clear();
-    refreshActivePageBadge();
-    updatePendingChangesMetric();
   } catch (error) {
     console.error('Unable to save content.', error);
     pending.forEach(markSectionError);
+  } finally {
     refreshActivePageBadge();
     updatePendingChangesMetric();
   }
-}, 400);
+}
 
 function markSectionDirty(sectionId) {
   const status = sectionStatus.get(sectionId);
@@ -1849,6 +2076,21 @@ function updatePreview(preview, dataUrl) {
   }
 }
 
+async function cacheImageLocally(slotId, dataUrl) {
+  const key = `${IMAGE_STORAGE_PREFIX}${slotId}`;
+  try {
+    localStorage.setItem(key, dataUrl);
+  } catch (error) {
+    const isQuota = error && (error.name === 'QuotaExceededError' || error.code === 22 || error.code === 1014);
+    if (isQuota) {
+      await idbSetImage(slotId, dataUrl);
+      localStorage.setItem(key, '__IDB__');
+      return;
+    }
+    throw error;
+  }
+}
+
 async function handleFileUpload(file, slotId, preview, input) {
   if (!file) return;
   if (file.size > MAX_FILE_SIZE) {
@@ -1860,24 +2102,18 @@ async function handleFileUpload(file, slotId, preview, input) {
   try {
     // Optimize image (resize + compress) to reduce storage footprint
     const dataUrl = await optimizeImageFile(file, slotId);
-    const key = `${IMAGE_STORAGE_PREFIX}${slotId}`;
+    const blob = await dataUrlToBlob(dataUrl);
     try {
-      localStorage.setItem(key, dataUrl);
-      updatePreview(preview, dataUrl);
-    } catch (error) {
-      const isQuota = error && (error.name === 'QuotaExceededError' || error.code === 22 || error.code === 1014);
-      if (isQuota) {
-        try {
-          await idbSetImage(slotId, dataUrl);
-          // Store a tiny marker so other tabs know to read from IndexedDB
-          localStorage.setItem(key, '__IDB__');
-          updatePreview(preview, dataUrl);
-        } catch (idbErr) {
-          console.error('Unable to store image in IndexedDB.', idbErr);
-          window.alert('Storage is full and fallback failed. Please remove older images or use a smaller file.');
-        }
-      } else {
-        console.error('Unable to store image.', error);
+      const remoteUrl = await uploadImageToBackend(slotId, blob, file.name);
+      updatePreview(preview, remoteUrl);
+    } catch (apiError) {
+      console.warn('Image upload failed, falling back to local cache.', apiError);
+      try {
+        await cacheImageLocally(slotId, dataUrl);
+        updatePreview(preview, dataUrl);
+        window.alert('Image saved locally only. Sync to the live site failed—please try again when the backend is reachable.');
+      } catch (storageErr) {
+        console.error('Unable to store image locally.', storageErr);
         window.alert('Could not store the image. Try clearing older images first.');
       }
     }
@@ -1890,9 +2126,19 @@ async function handleFileUpload(file, slotId, preview, input) {
 }
 
 async function clearSlot(slotId, preview) {
+  let remoteError = null;
+  try {
+    await deleteImageFromBackend(slotId);
+  } catch (error) {
+    remoteError = error;
+    console.warn('Unable to delete remote image.', error);
+  }
   try { await idbDeleteImage(slotId); } catch {}
   localStorage.removeItem(`${IMAGE_STORAGE_PREFIX}${slotId}`);
   updatePreview(preview, null);
+  if (remoteError) {
+    window.alert('The local preview was cleared, but the backend image could not be deleted. Please try again later.');
+  }
 }
 
 function handleStorageContentChange(rawValue) {
@@ -1915,10 +2161,16 @@ function handleStorageContentChange(rawValue) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initAdminApp();
+});
+
+async function initAdminApp() {
   if (!isStorageAvailable()) {
     window.alert('Local storage is disabled in this browser. Content edits cannot be saved.');
     return;
   }
+
+  await bootstrapRemoteState();
 
   const reloadButton = document.getElementById('reload-preview');
   if (reloadButton) {
@@ -1971,7 +2223,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
-});
+}
+
+async function bootstrapRemoteState() {
+  try {
+    await Promise.allSettled([
+      pullContentFromBackend(),
+      pullImagesFromBackend(),
+    ]);
+  } catch (error) {
+    console.warn('Failed bootstrapping backend state.', error);
+  }
+}
 
 // ---- IndexedDB fallback + image optimization helpers ----
 let __nvds_imageDbPromise;
@@ -2024,6 +2287,27 @@ async function idbDeleteImage(slotId) {
     tx.onerror = () => reject(tx.error);
     tx.objectStore('images').delete(slotId);
   });
+}
+
+function dataUrlToBlob(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    throw new Error('Invalid data URL.');
+  }
+  const parts = dataUrl.split(',');
+  if (parts.length < 2) {
+    throw new Error('Malformed data URL.');
+  }
+  const header = parts[0];
+  const data = parts[1];
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const binary = atob(data);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
 }
 
 function getTargetLongEdge(slotId) {

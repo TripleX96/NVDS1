@@ -1,5 +1,139 @@
 ﻿const IMAGE_STORAGE_PREFIX = 'nvds_images_';
 const CONTENT_STORAGE_KEY = 'nvds_content';
+const ADMIN_CONFIG_STORAGE_KEY = 'nvds_admin_config';
+
+function isStorageAvailable() {
+  try {
+    const testKey = '__nvds_test__';
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+    return true;
+  } catch (error) {
+    console.warn('Local storage is unavailable.', error);
+    return false;
+  }
+}
+
+function readAdminConfigSnapshot() {
+  if (!isStorageAvailable()) return {};
+  try {
+    const raw = localStorage.getItem(ADMIN_CONFIG_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getApiBase() {
+  try {
+    if (typeof window !== 'undefined' && window.NVDS_API_BASE) {
+      return window.NVDS_API_BASE;
+    }
+  } catch {}
+  const stored = readAdminConfigSnapshot();
+  if (stored.apiBase) return stored.apiBase;
+  try {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : '';
+    if (origin) {
+      return `${origin.replace(/\/$/, '')}/api`;
+    }
+  } catch {}
+  return '';
+}
+
+function buildApiUrl(path) {
+  const base = getApiBase();
+  if (!base) return '';
+  const normalizedBase = base.replace(/\/$/, '');
+  const normalizedPath = String(path || '').replace(/^[\/]/, '');
+  return `${normalizedBase}/${normalizedPath}`;
+}
+
+function getImageRoot() {
+  try {
+    if (typeof window !== 'undefined' && window.NVDS_IMAGE_ROOT) {
+      return window.NVDS_IMAGE_ROOT;
+    }
+  } catch {}
+  const stored = readAdminConfigSnapshot();
+  if (stored.imageRoot) return stored.imageRoot;
+  const apiBase = getApiBase();
+  if (!apiBase) return '';
+  if (apiBase.endsWith('/api')) {
+    return `${apiBase.slice(0, -4)}assets/uploads`;
+  }
+  return `${apiBase.replace(/\/$/, '')}/assets/uploads`;
+}
+
+function resolveImageUrl(input) {
+  if (!input) return null;
+  if (/^(data:|blob:|https?:|\/\/)/i.test(input)) {
+    if (input.startsWith('//')) {
+      try { return `${window.location.protocol}${input}`; } catch { return `https:${input}`; }
+    }
+    return input;
+  }
+  const normalized = input.startsWith('/') ? input : `/${input}`;
+  if (normalized.startsWith('/assets/uploads')) {
+    const root = getImageRoot();
+    if (root) {
+      const trimmed = normalized.replace(/^\/assets\/uploads\/?/, '');
+      return `${root.replace(/\/$/, '')}/${trimmed}`;
+    }
+  }
+  try {
+    const origin = window.location.origin && window.location.origin !== 'null'
+      ? window.location.origin
+      : '';
+    if (origin) {
+      return `${origin.replace(/\/$/, '')}${normalized}`;
+    }
+  } catch {}
+  const apiBase = getApiBase();
+  if (apiBase) {
+    const origin = apiBase.replace(/\/api$/, '');
+    return `${origin.replace(/\/$/, '')}${normalized}`;
+  }
+  return normalized;
+}
+
+function writeContentCache(diff) {
+  if (!isStorageAvailable()) return {};
+  const sanitized = {};
+  if (diff && typeof diff === 'object') {
+    Object.entries(diff).forEach(([key, value]) => {
+      if (typeof value === 'string') {
+        sanitized[key] = value;
+      }
+    });
+  }
+  if (Object.keys(sanitized).length === 0) {
+    localStorage.removeItem(CONTENT_STORAGE_KEY);
+  } else {
+    localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(sanitized));
+  }
+  return sanitized;
+}
+
+function pruneImageCache(validIds) {
+  if (!isStorageAvailable()) return;
+  const keep = new Set(validIds || []);
+  const removals = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith(IMAGE_STORAGE_PREFIX)) {
+      const slotId = key.replace(IMAGE_STORAGE_PREFIX, '');
+      if (!keep.has(slotId)) {
+        removals.push(key);
+      }
+    }
+  }
+  removals.forEach((key) => localStorage.removeItem(key));
+}
 
 const DEFAULT_CONTENT = {
   'nav.logoText': 'NVDS',
@@ -408,6 +542,7 @@ function applyImageToElement(element, dataUrl) {
 }
 
 function loadStoredImages() {
+  if (!isStorageAvailable()) return;
   const slots = document.querySelectorAll('[data-image-slot]');
   slots.forEach((slot) => {
     const key = `${IMAGE_STORAGE_PREFIX}${slot.dataset.imageSlot}`;
@@ -449,7 +584,54 @@ function loadStoredImages() {
   });
 }
 
+async function syncContentFromBackend() {
+  if (!isStorageAvailable() || typeof fetch !== 'function') return false;
+  const url = buildApiUrl('/content');
+  if (!url) return false;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json().catch(() => ({}));
+    const next = payload && typeof payload.content === 'object' && payload.content !== null
+      ? payload.content
+      : {};
+    writeContentCache(next);
+    return true;
+  } catch (error) {
+    console.warn('Unable to load remote content.', error);
+    return false;
+  }
+}
+
+async function syncImagesFromBackend() {
+  if (!isStorageAvailable() || typeof fetch !== 'function') return false;
+  const url = buildApiUrl('/images');
+  if (!url) return false;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json().catch(() => ({}));
+    const manifest = payload && typeof payload.images === 'object' && payload.images !== null
+      ? payload.images
+      : {};
+    const seen = new Set();
+    Object.entries(manifest).forEach(([slotId, src]) => {
+      const resolved = resolveImageUrl(src);
+      if (resolved) {
+        localStorage.setItem(`${IMAGE_STORAGE_PREFIX}${slotId}`, resolved);
+        seen.add(slotId);
+      }
+    });
+    pruneImageCache(seen);
+    return true;
+  } catch (error) {
+    console.warn('Unable to load remote images.', error);
+    return false;
+  }
+}
+
 function readStoredContent() {
+  if (!isStorageAvailable()) return {};
   try {
     const raw = localStorage.getItem(CONTENT_STORAGE_KEY);
     if (!raw) return {};
@@ -671,6 +853,7 @@ function setupSliders() {
 }
 
 async function maybeImportFromReadmeOnFirstLoad() {
+  if (!isStorageAvailable()) return false;
   try {
     const existing = localStorage.getItem(CONTENT_STORAGE_KEY);
     if (existing) return false;
@@ -700,9 +883,10 @@ async function maybeImportFromReadmeOnFirstLoad() {
     const diff = {};
     Object.keys(payload).forEach((k) => { if (DEFAULT_CONTENT[k] !== payload[k]) diff[k] = payload[k]; });
     if (Object.keys(diff).length > 0) {
-      localStorage.setItem(CONTENT_STORAGE_KEY, JSON.stringify(diff));
+      writeContentCache(diff);
       return true;
     }
+    writeContentCache({});
     return false;
   } catch {
     return false;
@@ -710,8 +894,18 @@ async function maybeImportFromReadmeOnFirstLoad() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await maybeImportFromReadmeOnFirstLoad();
+  const storageAvailable = isStorageAvailable();
+  let remoteContentSynced = false;
+  if (storageAvailable) {
+    remoteContentSynced = await syncContentFromBackend();
+  }
+  if (!remoteContentSynced) {
+    await maybeImportFromReadmeOnFirstLoad();
+  }
   applyContentToPage();
+  if (storageAvailable) {
+    await syncImagesFromBackend();
+  }
   loadStoredImages();
   setupSliders();
   setupChatWidget();
@@ -941,51 +1135,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  window.addEventListener('storage', (event) => {
-    if (!event.key) return;
-    if (event.key === CONTENT_STORAGE_KEY) {
-      applyContentToPage();
-      return;
-    }
-    if (event.key.startsWith(IMAGE_STORAGE_PREFIX)) {
-      const slotId = event.key.replace(IMAGE_STORAGE_PREFIX, '');
-      const element = document.querySelector(`[data-image-slot="${slotId}"]`);
-      if (!element) {
-        // If a blog card image changed, and the corresponding article hero exists but is empty, update it as a convenience
-        const cardToHero = {
-          'blog-card-1': 'blog-malnutrition-hero',
-          'blog-card-2': 'blog-education-hero',
-          'blog-card-3': 'blog-renewable-hero',
-          // Causes: focus card -> cause detail hero
-          'causes-focus-one': 'cause-healthcare-hero',
-          'causes-focus-two': 'cause-education-hero',
-          'causes-focus-three': 'cause-livelihoods-hero',
-        };
-        const heroSlot = cardToHero[slotId];
-        if (heroSlot) {
-          const heroEl = document.querySelector(`[data-image-slot="${heroSlot}"]`);
-          if (heroEl && heroEl.classList.contains('is-empty')) {
-            const value = event.newValue;
-            if (value === '__IDB__' || value === null) {
-              idbGetImage(slotId)
-                .then((data) => applyImageToElement(heroEl, data || null))
-                .catch(() => {});
-            } else {
-              applyImageToElement(heroEl, value);
-            }
-          }
-        }
+  if (storageAvailable) {
+    window.addEventListener('storage', (event) => {
+      if (!event.key) return;
+      if (event.key === CONTENT_STORAGE_KEY) {
+        applyContentToPage();
         return;
       }
-      if (event.newValue === '__IDB__' || event.newValue === null) {
-        idbGetImage(slotId)
-          .then((data) => applyImageToElement(element, data || null))
-          .catch(() => applyImageToElement(element, null));
-      } else {
-        applyImageToElement(element, event.newValue);
+      if (event.key.startsWith(IMAGE_STORAGE_PREFIX)) {
+        const slotId = event.key.replace(IMAGE_STORAGE_PREFIX, '');
+        const element = document.querySelector(`[data-image-slot="${slotId}"]`);
+        if (!element) {
+          // If a blog card image changed, and the corresponding article hero exists but is empty, update it as a convenience
+          const cardToHero = {
+            'blog-card-1': 'blog-malnutrition-hero',
+            'blog-card-2': 'blog-education-hero',
+            'blog-card-3': 'blog-renewable-hero',
+            // Causes: focus card -> cause detail hero
+            'causes-focus-one': 'cause-healthcare-hero',
+            'causes-focus-two': 'cause-education-hero',
+            'causes-focus-three': 'cause-livelihoods-hero',
+          };
+          const heroSlot = cardToHero[slotId];
+          if (heroSlot) {
+            const heroEl = document.querySelector(`[data-image-slot="${heroSlot}"]`);
+            if (heroEl && heroEl.classList.contains('is-empty')) {
+              const value = event.newValue;
+              if (value === '__IDB__' || value === null) {
+                idbGetImage(slotId)
+                  .then((data) => applyImageToElement(heroEl, data || null))
+                  .catch(() => {});
+              } else {
+                applyImageToElement(heroEl, value);
+              }
+            }
+          }
+          return;
+        }
+        if (event.newValue === '__IDB__' || event.newValue === null) {
+          idbGetImage(slotId)
+            .then((data) => applyImageToElement(element, data || null))
+            .catch(() => applyImageToElement(element, null));
+        } else {
+          applyImageToElement(element, event.newValue);
+        }
       }
-    }
-  });
+    });
+  }
 });
 
 // ---- IndexedDB helper for reading images saved when localStorage is full ----
@@ -1169,6 +1365,7 @@ const LC_QA_ITEMS = [
 const LC_QA_KEY = 'nvds_chat_qa';
 
 function lcGetQA() {
+  if (!isStorageAvailable()) return LC_QA_ITEMS;
   try {
     const raw = localStorage.getItem(LC_QA_KEY);
     if (!raw) return LC_QA_ITEMS;
