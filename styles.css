@@ -572,6 +572,8 @@ p {
 }
 
 .image-frame--tall {
+    background-image: url('Causes.JPG');
+
   height: 460px;
 }
 
@@ -581,6 +583,8 @@ p {
 }
 
 .image-frame--panorama {
+    background-image: url('D4.JPG');
+
     background-image: url('Second.JPG');
 
   height: clamp(260px, 45vw, 380px);
