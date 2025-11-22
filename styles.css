@@ -564,6 +564,8 @@ p {
 }
 
 .image-frame--landscape {
+    background-image: url('Volunter.JPG');
+
   height: 260px;
 }
 
