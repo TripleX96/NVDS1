@@ -553,11 +553,13 @@ p {
 }
 
 .image-frame--square {
-  background-image: url(D4.JPG);
+  background-image: url('D4.JPG');
   height: 200px;
 }
 
 .image-frame--portrait {
+    background-image: url('B2.JPG');
+
   height: 380px;
 }
 
@@ -579,6 +581,8 @@ p {
 }
 
 .image-frame--panorama {
+    background-image: url('Second.JPG');
+
   height: clamp(260px, 45vw, 380px);
   border-radius: var(--radius-large);
 }
