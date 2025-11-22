@@ -583,7 +583,7 @@ p {
 }
 
 .image-frame[data-image-slot="hero-primary"].is-empty {
-  background-image: url('Women\ and\ Youth.JPG');
+  background-image: url('Hero.JPG');
   background-size: cover;
   background-position: center;
 }
