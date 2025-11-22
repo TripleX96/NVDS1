@@ -553,6 +553,7 @@ p {
 }
 
 .image-frame--square {
+  background-image: url(D4.JPG);
   height: 200px;
 }
 
