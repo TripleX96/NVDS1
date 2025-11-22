@@ -583,7 +583,7 @@ p {
 }
 
 .image-frame[data-image-slot="hero-primary"].is-empty {
-  background-image: url('assets/hero-terraces.svg');
+  background-image: url('Women\ and\ Youth.JPG');
   background-size: cover;
   background-position: center;
 }
@@ -593,7 +593,7 @@ p {
 }
 
 .image-frame[data-image-slot="hero-secondary"].is-empty {
-  background-image: url('assets/hero-terraces.svg');
+  background-image: url('Health\ care\ .JPG');
   background-size: cover;
   background-position: center;
 }
@@ -611,13 +611,13 @@ p {
 .image-frame[data-image-slot^="gallery-"].is-empty::after { content: ''; }
 .image-frame[data-image-slot^="gallery-"].is-empty { background-image: none; }
 .image-frame[data-image-slot^="gallery-"].is-empty {
-  background-image: url('assets/hero-terraces.svg');
+  background-image: url('Women\ and\ Youth.JPG');
 }
 
 /* Blog card image placeholders */
 .image-frame[data-image-slot^="blog-card-"] { background-size: cover; background-position: center; }
 .image-frame[data-image-slot^="blog-card-"]::after { content: ''; }
-.image-frame[data-image-slot^="blog-card-"].is-empty { background-image: url('assets/hero-terraces.svg'); }
+.image-frame[data-image-slot^="blog-card-"].is-empty { background-image: url('Women\ and\ Youth.JPG'); }
 .image-frame[data-image-slot^="blog-card-"].is-empty::after { content: ''; }
 
 /* Gallery slider */
