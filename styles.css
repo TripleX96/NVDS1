@@ -581,7 +581,7 @@ p {
 }
 
 .image-frame--panorama {
-    background-image: url('Second.JPG');
+    background-image: url('D4.JPG');
 
   height: clamp(260px, 45vw, 380px);
   border-radius: var(--radius-large);
